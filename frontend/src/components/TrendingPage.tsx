@@ -129,17 +129,22 @@ const TrendingPage: React.FC<TrendingPageProps> = ({ onNavigateToQuery, onTopicC
       const response = await queryAPI.processQuery(naturalQuery);
       
       // Parse the response data into trending topics
-      const trendingTopics: TrendingTopic[] = response.data.map((item: any, index: number) => ({
-        topic_id: item.topic_id || (index + 1), // Use topic_id from data or fallback to index-based ID
-        topic_name: item.topic_name || 'Unknown',
-        category: item.category,
-        business: item.business,
-        country_code: item.country_code,
-        avg_trend_score: item.avg_trend_score || 0,
-        peak_trend_score: item.peak_trend_score,
-        total_volume: item.total_volume,
-        event_count: item.event_count
-      }));
+      const trendingTopics: TrendingTopic[] = response.data.map((item: any, index: number) => {
+        // Log the raw data to debug topic_id issues
+        console.log(`Topic ${index + 1}:`, item);
+        
+        return {
+          topic_id: item.topic_id, // Use only the actual topic_id from database, no fallback
+          topic_name: item.topic_name || 'Unknown',
+          category: item.category,
+          business: item.business,
+          country_code: item.country_code,
+          avg_trend_score: item.avg_trend_score || 0,
+          peak_trend_score: item.peak_trend_score,
+          total_volume: item.total_volume,
+          event_count: item.event_count
+        };
+      });
       
       setTrends(trendingTopics);
     } catch (err) {
@@ -349,8 +354,10 @@ const TrendingPage: React.FC<TrendingPageProps> = ({ onNavigateToQuery, onTopicC
           error={error}
           onTopicClick={(topic) => {
             console.log('Clicked topic:', topic.topic_name, 'ID:', topic.topic_id);
-            if (topic.topic_id) {
+            if (topic.topic_id && typeof topic.topic_id === 'number') {
               onTopicClick?.(topic.topic_id, topic.topic_name);
+            } else {
+              console.warn('Cannot navigate - invalid topic_id:', topic.topic_id);
             }
           }}
         />

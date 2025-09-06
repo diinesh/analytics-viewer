@@ -35,6 +35,7 @@ Examples of CORRECT queries using the denormalized schema:
 
 Basic trending topics (last 24 hours):
 SELECT 
+    topic_id,
     topic_name,
     category,
     business,
@@ -49,6 +50,7 @@ LIMIT 50;
 
 Recent trending (last 15 minutes):
 SELECT 
+    topic_id,
     topic_name,
     business,
     avg(trend_score) as current_trend_score,
@@ -61,6 +63,7 @@ LIMIT 20;
 
 Trending by business:
 SELECT 
+    topic_id,
     topic_name,
     business,
     avg(trend_score) as trend_score,
@@ -74,6 +77,7 @@ LIMIT 25;
 
 Trending by category:
 SELECT 
+    topic_id,
     topic_name,
     category,
     avg(trend_score) as trend_score,
@@ -87,6 +91,7 @@ LIMIT 25;
 
 Trending by stat type:
 SELECT 
+    topic_id,
     topic_name,
     stat_type,
     avg(trend_score) as avg_trend_score,
@@ -100,6 +105,7 @@ LIMIT 20;
 
 Trending by Country:
 SELECT 
+    topic_id,
     topic_name,
     country_code,
     avg(trend_score) as avg_trend_score
@@ -112,6 +118,7 @@ LIMIT 20;
 
 Trending by State/Region:
 SELECT 
+    topic_id,
     topic_name,
     country_code,
     region_code,

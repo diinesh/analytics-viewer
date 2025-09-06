@@ -92,17 +92,27 @@ async def process_query(request: QueryRequest):
         if len(result.result_rows) == 0:
             print("No results returned. Let's check table data...")
             try:
-                # Check if table exists and has data
-                count_result = client.query("SELECT COUNT(*) as total FROM google_trends")
-                print(f"Total rows in google_trends: {count_result.result_rows[0][0]}")
+                # Check if trend_events table exists and has data
+                count_result = client.query("SELECT COUNT(*) as total FROM trend_events")
+                print(f"Total rows in trend_events: {count_result.result_rows[0][0]}")
                 
-                # Check date range
-                date_check = client.query("SELECT MIN(trend_timestamp) as min_date, MAX(trend_timestamp) as max_date FROM google_trends WHERE trend_timestamp IS NOT NULL")
+                # Check date range in trend_events
+                date_check = client.query("SELECT MIN(timestamp) as min_date, MAX(timestamp) as max_date FROM trend_events")
                 if date_check.result_rows:
-                    print(f"Date range in google_trends: {date_check.result_rows[0][0]} to {date_check.result_rows[0][1]}")
+                    print(f"Date range in trend_events: {date_check.result_rows[0][0]} to {date_check.result_rows[0][1]}")
                 
-                # Show sample data
-                sample_result = client.query("SELECT topic, trend_timestamp FROM google_trends LIMIT 5")
+                # Check available countries
+                country_check = client.query("SELECT DISTINCT country_code FROM trend_events LIMIT 10")
+                if country_check.result_rows:
+                    print(f"Available countries: {[row[0] for row in country_check.result_rows]}")
+                
+                # Check available businesses
+                business_check = client.query("SELECT DISTINCT business FROM trend_events LIMIT 10")
+                if business_check.result_rows:
+                    print(f"Available businesses: {[row[0] for row in business_check.result_rows]}")
+                
+                # Show sample data (denormalized - no JOINs needed)
+                sample_result = client.query("SELECT topic_name, timestamp, stat_type, country_code, business FROM trend_events LIMIT 5")
                 print(f"Sample data: {sample_result.result_rows}")
                 
             except Exception as debug_e:
@@ -144,46 +154,134 @@ async def convert_to_sql(natural_query: str) -> str:
 
 CRITICAL RULES:
 1. Use ONLY the table names and column names provided in the schema below
-2. Do NOT create fictional table names like "marketing_trends" or "trending_topics"  
-3. Use the actual table names: zero_shot_analysis, zero_shot_entities, zero_shot_trends, content_sources, google_trends, x_trending_topics
-4. NEVER mix columns from different tables - check which table each column belongs to
-5. Always include a LIMIT clause (typically LIMIT 100 unless specified otherwise)
+2. The main table is: trend_events (DENORMALIZED - no JOINs needed!)
+3. All topic information is already denormalized in trend_events table
+4. NEVER use JOINs - all data is in the single trend_events table
+5. Always include a LIMIT clause (typically LIMIT 50 unless specified otherwise)
 6. Use proper ClickHouse syntax
 
-COLUMN MAPPING BY TABLE:
-zero_shot_analysis: id, content_hash, source_url, crawled_at, analyzed_at, content_title, content_text, content_length, specific_topic, broad_category, marketing_intent, confidence_score, business_contexts, trend_signals, model_name, processing_time_ms
-
-google_trends: id, topic, geo, timeframe, category_id, category_name, search_type, trend_rank, interest_over_time, time_index, data_points, source, marketing_relevance, crawled_at, trend_timestamp
-
-x_trending_topics: id, topic, hashtag, trend_rank, tweet_volume, location, virality_score, marketing_potential, brand_safety, social_category, target_demographics, marketing_actions, trending_at, crawled_at, analyzed_at
+COLUMN MAPPING FOR trend_events:
+event_id, topic_id, topic_name, category, business, timestamp, country_code, region_code, city_code, stat_type, stat_value, trend_score, date
 
 AVAILABLE SCHEMA:
 {schema_info}
 
 QUERY TO CONVERT: "{natural_query}"
 
-Examples of CORRECT queries by table:
+Examples of CORRECT queries using the denormalized schema:
 
-zero_shot_analysis queries:
-- SELECT specific_topic, broad_category, confidence_score FROM zero_shot_analysis WHERE marketing_intent = 'high' LIMIT 20
-- SELECT * FROM zero_shot_analysis WHERE analyzed_at >= now() - INTERVAL 7 DAY LIMIT 50
+Basic trending topics (last 24 hours):
+SELECT 
+    topic_name,
+    category,
+    business,
+    avg(trend_score) as avg_trend_score,
+    max(trend_score) as peak_trend_score,
+    sum(stat_value) as total_volume
+FROM trend_events
+WHERE timestamp >= now() - INTERVAL 24 HOUR
+GROUP BY topic_id, topic_name, category, business
+ORDER BY avg_trend_score DESC
+LIMIT 50;
 
-google_trends queries:  
-- SELECT topic, geo, category_name, data_points FROM google_trends WHERE marketing_relevance = true LIMIT 15
-- SELECT topic, trend_rank FROM google_trends WHERE trend_timestamp >= now() - INTERVAL 7 DAY ORDER BY trend_rank ASC LIMIT 20
+Recent trending (last 15 minutes):
+SELECT 
+    topic_name,
+    business,
+    avg(trend_score) as current_trend_score,
+    count(*) as event_count
+FROM trend_events
+WHERE timestamp >= now() - INTERVAL 15 MINUTE
+GROUP BY topic_id, topic_name, business
+ORDER BY current_trend_score DESC
+LIMIT 20;
 
-x_trending_topics queries:
-- SELECT topic, virality_score, marketing_potential FROM x_trending_topics ORDER BY virality_score DESC LIMIT 10
-- SELECT hashtag, tweet_volume, brand_safety FROM x_trending_topics WHERE trending_at >= now() - INTERVAL 1 DAY LIMIT 25
+Trending by business:
+SELECT 
+    topic_name,
+    business,
+    avg(trend_score) as trend_score,
+    sum(stat_value) as total_volume
+FROM trend_events
+WHERE timestamp >= now() - INTERVAL 24 HOUR
+  AND business = 'tech'
+GROUP BY topic_id, topic_name, business
+ORDER BY trend_score DESC
+LIMIT 25;
 
-WRONG examples (DO NOT DO):
-- SELECT broad_category FROM google_trends (broad_category only exists in zero_shot_analysis)
-- SELECT virality_score FROM google_trends (virality_score only exists in x_trending_topics)
+Trending by category:
+SELECT 
+    topic_name,
+    category,
+    avg(trend_score) as trend_score,
+    sum(stat_value) as total_volume
+FROM trend_events
+WHERE timestamp >= now() - INTERVAL 24 HOUR
+  AND category = 'sports'
+GROUP BY topic_id, topic_name, category
+ORDER BY trend_score DESC
+LIMIT 25;
 
-IMPORTANT DATE/TIME RULES:
-- Use "now() - INTERVAL X DAY" for time-based filtering (not toDate())
-- DateTime columns: analyzed_at, crawled_at, trend_timestamp, trending_at, trend_detected_at
-- Always use proper INTERVAL syntax: INTERVAL 1 DAY, INTERVAL 7 DAY, INTERVAL 1 HOUR
+Trending by stat type:
+SELECT 
+    topic_name,
+    stat_type,
+    avg(trend_score) as avg_trend_score,
+    sum(stat_value) as total_stat_value
+FROM trend_events
+WHERE timestamp >= now() - INTERVAL 24 HOUR
+  AND stat_type = 'search_volume'
+GROUP BY topic_id, topic_name, stat_type
+ORDER BY avg_trend_score DESC
+LIMIT 20;
+
+Trending by Country:
+SELECT 
+    topic_name,
+    country_code,
+    avg(trend_score) as avg_trend_score
+FROM trend_events
+WHERE timestamp >= now() - INTERVAL 24 HOUR
+  AND country_code = 'US'
+GROUP BY topic_id, topic_name, country_code
+ORDER BY avg_trend_score DESC
+LIMIT 20;
+
+Trending by State/Region:
+SELECT 
+    topic_name,
+    country_code,
+    region_code,
+    avg(trend_score) as avg_trend_score
+FROM trend_events
+WHERE timestamp >= now() - INTERVAL 24 HOUR
+  AND country_code = 'US'
+  AND region_code = 'CA'
+GROUP BY topic_id, topic_name, country_code, region_code
+ORDER BY avg_trend_score DESC
+LIMIT 20;
+
+Multi-country analysis (US and Canada):
+SELECT 
+    topic_name,
+    country_code,
+    avg(trend_score) as avg_trend_score,
+    max(trend_score) as peak_trend_score,
+    sum(stat_value) as total_volume,
+    count(*) as event_count
+FROM trend_events
+WHERE timestamp >= now() - INTERVAL 24 HOUR
+  AND country_code IN ('US', 'CA')
+GROUP BY topic_name, country_code
+ORDER BY avg_trend_score DESC
+LIMIT 50;
+
+IMPORTANT RULES:
+- NO JOINs needed - all data is denormalized in trend_events table
+- Use "now() - INTERVAL X DAY/HOUR/MINUTE" for time-based filtering
+- DateTime column: timestamp
+- Geographic filtering: country_code, region_code, city_code
+- Always use proper INTERVAL syntax: INTERVAL 1 DAY, INTERVAL 6 HOUR, INTERVAL 15 MINUTE
 
 Return ONLY the SQL query, no explanations or markdown formatting."""
         
@@ -214,116 +312,39 @@ async def get_schema_info() -> str:
         return "No schema available - ClickHouse not connected"
     
     try:
-        # Define all tables and their descriptions for the complete analytics platform
+        # Schema based on the updated trends_schema_and_queries.sql DDL file (denormalized)
         schema_info = """Available tables and their purpose:
 
-Table: zero_shot_analysis
-Purpose: Main analysis results from zero-shot topic classification
+Table: trend_events (DENORMALIZED STRUCTURE)
+Purpose: Time-series events with denormalized topic information and geographic hierarchy
 Key columns:
-  - id (UUID): Unique identifier
-  - content_hash (String): Hash of original content
-  - source_url (String): URL source of content
-  - crawled_at (DateTime): When content was crawled
-  - analyzed_at (DateTime): When analysis was performed
-  - content_title (String): Title of the content
-  - content_text (String): Full text content
-  - content_length (UInt32): Length of content
-  - specific_topic (String): Identified specific topic
-  - broad_category (LowCardinality(String)): General category
-  - marketing_intent (LowCardinality(String)): Marketing intent classification
-  - confidence_score (Float32): Analysis confidence (0-1)
-  - business_contexts (Array(LowCardinality(String))): Business context tags
-  - trend_signals (Array(String)): Trend indicators
-  - model_name (String): ML model used
-  - processing_time_ms (UInt32): Processing time
+  - event_id (UInt64): Unique event identifier (PRIMARY KEY)
+  - topic_id (UInt32): Topic identifier
+  - topic_name (LowCardinality(String)): Denormalized topic name
+  - category (LowCardinality(String)): Denormalized topic category
+  - business (LowCardinality(String)): Denormalized business vertical/industry
+  - timestamp (DateTime64(3)): Event timestamp with millisecond precision
+  - country_code (LowCardinality(String)): Country code ('US', 'CA', 'GB', etc.)
+  - region_code (LowCardinality(String)): State/province code ('TX', 'NY', 'ON', 'BC', etc.)
+  - city_code (LowCardinality(String)): City code ('NYC', 'LAX', 'TOR', etc.)
+  - stat_type (LowCardinality(String)): Type of statistic ('appearance', 'search_volume', 'mentions', etc.)
+  - stat_value (Float64): The actual statistic value
+  - trend_score (Float32): Overall trend strength/momentum at this point
+  - date (Date): Materialized date field partitioned by YYYYMM
 
-Table: zero_shot_entities
-Purpose: Named entities extracted from analyzed content
-Key columns:
-  - analysis_id (UUID): Links to zero_shot_analysis
-  - entity_name (String): Name of the entity
-  - entity_type (LowCardinality(String)): Type of entity
-  - confidence (Float32): Entity extraction confidence
-  - relevance_score (Float32): Relevance to content
-  - context_snippet (String): Context where entity appears
-
-Table: zero_shot_trends  
-Purpose: Trend analysis and momentum tracking
-Key columns:
-  - topic (String): Topic being tracked
-  - trend_type (LowCardinality(String)): emerging/growing/stable/declining
-  - momentum_score (Float32): Trend momentum indicator
-  - mentions_count (UInt32): Number of mentions
-  - trend_detected_at (DateTime): When trend was detected
-
-Table: content_sources
-Purpose: Tracking content sources and their crawling statistics
-Key columns:
-  - source_url (String): Source URL
-  - domain (String): Domain name
-  - source_type (LowCardinality(String)): website/reddit/twitter/etc
-  - crawl_count (UInt32): Number of crawls
-  - success_rate (Float32): Crawling success rate
-
-Table: google_trends
-Purpose: Google Trends data for trending topics and keyword search volumes
-Key columns:
-  - id (UUID): Unique identifier
-  - topic (String): Trending topic or keyword
-  - geo (LowCardinality(String)): Geographic location
-  - timeframe (LowCardinality(String)): Time period
-  - category_id (Int32): Google category ID
-  - category_name (LowCardinality(String)): Category name
-  - search_type (LowCardinality(String)): trending/keyword
-  - trend_rank (UInt8): Ranking position
-  - interest_over_time (String): JSON time series data
-  - data_points (UInt16): Number of data points
-  - marketing_relevance (Bool): Marketing relevance flag
-  - crawled_at (DateTime): When data was collected
-  - trend_timestamp (DateTime): When trend occurred
-
-Table: google_trends_related
-Purpose: Related queries from Google Trends
-Key columns:
-  - main_topic (String): Main trending topic
-  - geo (LowCardinality(String)): Geographic location
-  - related_query (String): Related search query
-  - query_type (LowCardinality(String)): rising/top
-
-Table: x_trending_topics
-Purpose: X.com (Twitter) trending topics and social media analysis
-Key columns:
-  - id (UUID): Unique identifier
-  - topic (String): Trending topic
-  - hashtag (String): Associated hashtag
-  - trend_rank (UInt8): Trend ranking
-  - tweet_volume (UInt64): Number of tweets
-  - location (LowCardinality(String)): Geographic location
-  - virality_score (Float32): Virality measurement
-  - marketing_potential (LowCardinality(String)): high/medium/low
-  - brand_safety (LowCardinality(String)): safe/medium_risk/high_risk/unknown
-  - social_category (LowCardinality(String)): Social media category
-  - target_demographics (Array(String)): Target audience demographics
-  - marketing_actions (Array(String)): Suggested marketing actions
-  - trending_at (DateTime): When topic was trending
-  - crawled_at (DateTime): When data was collected
-
-Materialized Views (pre-aggregated data):
-  - daily_analysis_stats: Daily aggregations of zero-shot analysis
-  - google_trends_daily_summary: Daily Google Trends summaries
-  - cross_source_topic_correlation: Cross-platform topic correlations
-  - daily_trending_insights: Combined trending insights across all sources
-  - x_trending_daily_summary: Daily X.com trending summaries
+Storage and Performance:
+- Partitioned by month: PARTITION BY toYYYYMM(date)
+- Optimized for time-series and geographic queries: ORDER BY (timestamp, country_code, topic_id)
+- Denormalized structure eliminates need for JOINs
+- Geographic hierarchy: country_code -> region_code -> city_code
 
 Common query patterns:
-- Time-based analysis: Use analyzed_at, crawled_at, trending_at, trend_detected_at
-- Topic analysis: Use specific_topic, topic, broad_category
-- Confidence filtering: Use confidence_score >= 0.7 for high-confidence results
-- Cross-platform analysis: Join zero_shot_analysis with google_trends or x_trending_topics on topic matching
-- Marketing analysis: Filter by marketing_intent, marketing_potential, marketing_relevance
-- Social media analysis: Use x_trending_topics for virality, brand safety, demographics
-- Geographic analysis: Use geo column in google_trends and location in x_trending_topics
-- Trend correlation: Use materialized views for pre-aggregated insights
+- Time-based trending analysis: Filter by timestamp with INTERVAL queries
+- Geographic analysis: Filter by country_code, region_code, or city_code
+- Business/category analysis: Filter by business or category (no JOINs needed)
+- Stat type analysis: Filter by stat_type (search_volume, mentions, etc.)
+- Recent trends: Use timestamp >= now() - INTERVAL X HOUR/DAY/MINUTE
+- Multi-country analysis: Use country_code IN ('US', 'CA') for regional comparisons
 """
         
         return schema_info

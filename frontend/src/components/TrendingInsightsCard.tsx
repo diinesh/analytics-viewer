@@ -202,7 +202,8 @@ const TrendingInsightsCard: React.FC<TrendingInsightsCardProps> = ({
           backgroundColor: '#f9fafb',
           padding: '16px',
           borderRadius: '8px',
-          border: '1px solid #e5e7eb'
+          border: '1px solid #e5e7eb',
+          whiteSpace: 'pre-wrap'
         }}>
           {insights.content_summary}
         </p>

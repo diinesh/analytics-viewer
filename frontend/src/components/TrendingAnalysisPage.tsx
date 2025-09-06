@@ -183,7 +183,8 @@ const TrendingAnalysisPage: React.FC<TrendingAnalysisPageProps> = ({
       <div style={{
         fontSize: '14px',
         lineHeight: '1.5',
-        color: color
+        color: color,
+        whiteSpace: 'pre-wrap'
       }}>
         {value}
       </div>

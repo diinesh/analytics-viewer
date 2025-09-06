@@ -3,11 +3,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any
 import clickhouse_connect
-from openai import OpenAI
 import os
 from dotenv import load_dotenv
 import json
-import re
+
+from agents.sql.sql_agent import sql_agent
+from agents.integrations.openai_client import openai_client
+from agents.analysis.trending_agent import trending_analysis_agent
 
 load_dotenv()
 
@@ -21,14 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize OpenAI client
-openai_client = None
-openai_api_key = os.getenv("OPENAI_API_KEY")
-if openai_api_key:
-    openai_client = OpenAI(api_key=openai_api_key)
-    print("OpenAI client initialized successfully")
-else:
-    print("ERROR: OPENAI_API_KEY not found in environment")
+# OpenAI client is now initialized in agents/integrations/openai_client.py
 
 # ClickHouse connection with detailed debugging
 client = None
@@ -68,6 +63,27 @@ class QueryResponse(BaseModel):
     chart_type: str
     title: str
 
+class TopicDetailResponse(BaseModel):
+    topic_info: Dict[str, Any]
+    time_series_data: List[Dict[str, Any]]
+    stats: Dict[str, Any]
+
+class TrendingAnalysisResponse(BaseModel):
+    topic_info: Dict[str, Any]
+    trending_analysis: Dict[str, Any]
+    popularity_distribution: Dict[str, Any]
+    content_summary: Dict[str, Any]
+    web_context: Dict[str, Any]
+    raw_data: Dict[str, Any]
+
+class TrendingInsightsResponse(BaseModel):
+    topic_name: str
+    trend_score: float
+    content_summary: str
+    key_themes: List[str]
+    geographic_focus: List[str]
+    analysis_type: str
+
 @app.post("/api/query", response_model=QueryResponse)
 async def process_query(request: QueryRequest):
     try:
@@ -75,7 +91,7 @@ async def process_query(request: QueryRequest):
         
         # Step 1: Convert to SQL
         print("Converting natural language to SQL...")
-        sql_query = await convert_to_sql(request.query)
+        sql_query = await sql_agent.convert_to_sql(request.query)
         print(f"Generated SQL: {sql_query}")
         
         # Step 2: Check ClickHouse connection
@@ -145,211 +161,7 @@ async def process_query(request: QueryRequest):
         print(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {type(e).__name__}: {str(e)}")
 
-async def convert_to_sql(natural_query: str) -> str:
-    try:
-        print("Getting schema information...")
-        schema_info = await get_schema_info()
-        
-        prompt = f"""You are a ClickHouse SQL expert. Convert the natural language query to ClickHouse SQL using ONLY the tables and columns listed below.
 
-CRITICAL RULES:
-1. Use ONLY the table names and column names provided in the schema below
-2. The main table is: trend_events (DENORMALIZED - no JOINs needed!)
-3. All topic information is already denormalized in trend_events table
-4. NEVER use JOINs - all data is in the single trend_events table
-5. Always include a LIMIT clause (typically LIMIT 50 unless specified otherwise)
-6. Use proper ClickHouse syntax
-
-COLUMN MAPPING FOR trend_events:
-event_id, topic_id, topic_name, category, business, timestamp, country_code, region_code, city_code, stat_type, stat_value, trend_score, date
-
-AVAILABLE SCHEMA:
-{schema_info}
-
-QUERY TO CONVERT: "{natural_query}"
-
-Examples of CORRECT queries using the denormalized schema:
-
-Basic trending topics (last 24 hours):
-SELECT 
-    topic_name,
-    category,
-    business,
-    avg(trend_score) as avg_trend_score,
-    max(trend_score) as peak_trend_score,
-    sum(stat_value) as total_volume
-FROM trend_events
-WHERE timestamp >= now() - INTERVAL 24 HOUR
-GROUP BY topic_id, topic_name, category, business
-ORDER BY avg_trend_score DESC
-LIMIT 50;
-
-Recent trending (last 15 minutes):
-SELECT 
-    topic_name,
-    business,
-    avg(trend_score) as current_trend_score,
-    count(*) as event_count
-FROM trend_events
-WHERE timestamp >= now() - INTERVAL 15 MINUTE
-GROUP BY topic_id, topic_name, business
-ORDER BY current_trend_score DESC
-LIMIT 20;
-
-Trending by business:
-SELECT 
-    topic_name,
-    business,
-    avg(trend_score) as trend_score,
-    sum(stat_value) as total_volume
-FROM trend_events
-WHERE timestamp >= now() - INTERVAL 24 HOUR
-  AND business = 'tech'
-GROUP BY topic_id, topic_name, business
-ORDER BY trend_score DESC
-LIMIT 25;
-
-Trending by category:
-SELECT 
-    topic_name,
-    category,
-    avg(trend_score) as trend_score,
-    sum(stat_value) as total_volume
-FROM trend_events
-WHERE timestamp >= now() - INTERVAL 24 HOUR
-  AND category = 'sports'
-GROUP BY topic_id, topic_name, category
-ORDER BY trend_score DESC
-LIMIT 25;
-
-Trending by stat type:
-SELECT 
-    topic_name,
-    stat_type,
-    avg(trend_score) as avg_trend_score,
-    sum(stat_value) as total_stat_value
-FROM trend_events
-WHERE timestamp >= now() - INTERVAL 24 HOUR
-  AND stat_type = 'search_volume'
-GROUP BY topic_id, topic_name, stat_type
-ORDER BY avg_trend_score DESC
-LIMIT 20;
-
-Trending by Country:
-SELECT 
-    topic_name,
-    country_code,
-    avg(trend_score) as avg_trend_score
-FROM trend_events
-WHERE timestamp >= now() - INTERVAL 24 HOUR
-  AND country_code = 'US'
-GROUP BY topic_id, topic_name, country_code
-ORDER BY avg_trend_score DESC
-LIMIT 20;
-
-Trending by State/Region:
-SELECT 
-    topic_name,
-    country_code,
-    region_code,
-    avg(trend_score) as avg_trend_score
-FROM trend_events
-WHERE timestamp >= now() - INTERVAL 24 HOUR
-  AND country_code = 'US'
-  AND region_code = 'CA'
-GROUP BY topic_id, topic_name, country_code, region_code
-ORDER BY avg_trend_score DESC
-LIMIT 20;
-
-Multi-country analysis (US and Canada):
-SELECT 
-    topic_name,
-    country_code,
-    avg(trend_score) as avg_trend_score,
-    max(trend_score) as peak_trend_score,
-    sum(stat_value) as total_volume,
-    count(*) as event_count
-FROM trend_events
-WHERE timestamp >= now() - INTERVAL 24 HOUR
-  AND country_code IN ('US', 'CA')
-GROUP BY topic_name, country_code
-ORDER BY avg_trend_score DESC
-LIMIT 50;
-
-IMPORTANT RULES:
-- NO JOINs needed - all data is denormalized in trend_events table
-- Use "now() - INTERVAL X DAY/HOUR/MINUTE" for time-based filtering
-- DateTime column: timestamp
-- Geographic filtering: country_code, region_code, city_code
-- Always use proper INTERVAL syntax: INTERVAL 1 DAY, INTERVAL 6 HOUR, INTERVAL 15 MINUTE
-
-Return ONLY the SQL query, no explanations or markdown formatting."""
-        
-        print(prompt)
-        
-        print("Calling OpenAI API...")
-        if not openai_client:
-            raise Exception("OpenAI client not initialized - check API key")
-            
-        response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0
-        )
-        
-        sql = response.choices[0].message.content.strip()
-        sql = re.sub(r'```sql\n?', '', sql)
-        sql = re.sub(r'\n?```', '', sql)
-        
-        print(f"OpenAI returned SQL: {sql}")
-        return sql
-    except Exception as e:
-        print(f"ERROR in convert_to_sql: {type(e).__name__}: {str(e)}")
-        raise Exception(f"Error converting to SQL: {type(e).__name__}: {str(e)}")
-
-async def get_schema_info() -> str:
-    if not client:
-        return "No schema available - ClickHouse not connected"
-    
-    try:
-        # Schema based on the updated trends_schema_and_queries.sql DDL file (denormalized)
-        schema_info = """Available tables and their purpose:
-
-Table: trend_events (DENORMALIZED STRUCTURE)
-Purpose: Time-series events with denormalized topic information and geographic hierarchy
-Key columns:
-  - event_id (UInt64): Unique event identifier (PRIMARY KEY)
-  - topic_id (UInt32): Topic identifier
-  - topic_name (LowCardinality(String)): Denormalized topic name
-  - category (LowCardinality(String)): Denormalized topic category
-  - business (LowCardinality(String)): Denormalized business vertical/industry
-  - timestamp (DateTime64(3)): Event timestamp with millisecond precision
-  - country_code (LowCardinality(String)): Country code ('US', 'CA', 'GB', etc.)
-  - region_code (LowCardinality(String)): State/province code ('TX', 'NY', 'ON', 'BC', etc.)
-  - city_code (LowCardinality(String)): City code ('NYC', 'LAX', 'TOR', etc.)
-  - stat_type (LowCardinality(String)): Type of statistic ('appearance', 'search_volume', 'mentions', etc.)
-  - stat_value (Float64): The actual statistic value
-  - trend_score (Float32): Overall trend strength/momentum at this point
-  - date (Date): Materialized date field partitioned by YYYYMM
-
-Storage and Performance:
-- Partitioned by month: PARTITION BY toYYYYMM(date)
-- Optimized for time-series and geographic queries: ORDER BY (timestamp, country_code, topic_id)
-- Denormalized structure eliminates need for JOINs
-- Geographic hierarchy: country_code -> region_code -> city_code
-
-Common query patterns:
-- Time-based trending analysis: Filter by timestamp with INTERVAL queries
-- Geographic analysis: Filter by country_code, region_code, or city_code
-- Business/category analysis: Filter by business or category (no JOINs needed)
-- Stat type analysis: Filter by stat_type (search_volume, mentions, etc.)
-- Recent trends: Use timestamp >= now() - INTERVAL X HOUR/DAY/MINUTE
-- Multi-country analysis: Use country_code IN ('US', 'CA') for regional comparisons
-"""
-        
-        return schema_info
-    except Exception as e:
-        return f"Error fetching schema: {str(e)}"
 
 def determine_chart_type(query: str, data: List[Dict]) -> str:
     # Always return table for now - charts will be added later
@@ -357,6 +169,154 @@ def determine_chart_type(query: str, data: List[Dict]) -> str:
 
 def generate_title(query: str) -> str:
     return f"Results: {query[:50]}{'...' if len(query) > 50 else ''}"
+
+@app.get("/api/topic/{topic_id}", response_model=TopicDetailResponse)
+async def get_topic_details(topic_id: int, time_range: str = "7d", stat_type: str = "all", country: str = "all"):
+    try:
+        print(f"Fetching details for topic ID: {topic_id}")
+        
+        if not client:
+            raise HTTPException(status_code=500, detail="ClickHouse connection not available")
+        
+        # Build the natural language query for topic details using topic_id
+        query = f'Show me detailed information about topic ID {topic_id}'
+        
+        time_mapping = {
+            '1h': '1 HOUR',
+            '6h': '6 HOUR', 
+            '24h': '24 HOUR',
+            '7d': '7 DAY',
+            '30d': '30 DAY'
+        }
+        
+        time_interval = time_mapping.get(time_range, '7 DAY')
+        query += f' with time series data for the last {time_interval.lower()}'
+        
+        if stat_type != 'all':
+            query += f' for {stat_type} statistics'
+            
+        if country != 'all':
+            query += f' in {country}'
+        
+        print(f"Generated topic query: {query}")
+        
+        # Convert to SQL using agent
+        sql_query = await sql_agent.generate_topic_detail_sql(topic_id, time_range, stat_type, country)
+        print(f"Generated SQL for topic: {sql_query}")
+        
+        # Execute the query
+        result = client.query(sql_query)
+        
+        # Process the results
+        time_series_data = []
+        topic_info = {}
+        
+        if result.result_rows:
+            columns = result.column_names
+            for row in result.result_rows:
+                row_data = dict(zip(columns, row))
+                time_series_data.append(row_data)
+                
+                # Extract topic info from first row
+                if not topic_info:
+                    topic_info = {
+                        'topic_name': row_data.get('topic_name', f'Topic {topic_id}'),
+                        'category': row_data.get('category'),
+                        'business': row_data.get('business'),
+                        'topic_id': row_data.get('topic_id', topic_id),
+                        'trend_score': row_data.get('avg_trend_score') or row_data.get('trend_score')
+                    }
+        
+        # Calculate stats
+        stats = {}
+        if time_series_data:
+            trend_scores = [float(row.get('trend_score', 0) or row.get('avg_trend_score', 0)) for row in time_series_data if row.get('trend_score') or row.get('avg_trend_score')]
+            stat_values = [float(row.get('stat_value', 0) or row.get('total_volume', 0)) for row in time_series_data if row.get('stat_value') or row.get('total_volume')]
+            
+            stats = {
+                'total_events': len(time_series_data),
+                'avg_trend_score': sum(trend_scores) / len(trend_scores) if trend_scores else 0,
+                'peak_trend_score': max(trend_scores) if trend_scores else 0,
+                'total_volume': sum(stat_values) if stat_values else 0,
+                'countries': list(set([row.get('country_code') for row in time_series_data if row.get('country_code')])),
+                'stat_types': list(set([row.get('stat_type') for row in time_series_data if row.get('stat_type')])),
+                'date_range': {
+                    'start': min([row.get('timestamp') for row in time_series_data if row.get('timestamp')], default=''),
+                    'end': max([row.get('timestamp') for row in time_series_data if row.get('timestamp')], default='')
+                }
+            }
+        
+        # If no topic info was found, create a basic one
+        if not topic_info:
+            topic_info = {
+                'topic_name': f'Topic {topic_id}',
+                'category': None,
+                'business': None,
+                'topic_id': topic_id,
+                'trend_score': None
+            }
+        
+        return TopicDetailResponse(
+            topic_info=topic_info,
+            time_series_data=time_series_data,
+            stats=stats
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ERROR in get_topic_details: {type(e).__name__}: {str(e)}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {type(e).__name__}: {str(e)}")
+
+@app.get("/api/topic/{topic_id}/analysis", response_model=TrendingAnalysisResponse)
+async def get_topic_analysis(topic_id: int, time_range: str = "24h"):
+    """
+    Get comprehensive trending analysis for a specific topic
+    """
+    try:
+        print(f"Getting trending analysis for topic ID: {topic_id}")
+        
+        # Get comprehensive analysis from trending agent
+        analysis = await trending_analysis_agent.analyze_topic_trending(topic_id, time_range)
+        
+        if "error" in analysis:
+            raise HTTPException(status_code=500, detail=analysis["error"])
+        
+        return TrendingAnalysisResponse(**analysis)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ERROR in get_topic_analysis: {type(e).__name__}: {str(e)}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {type(e).__name__}: {str(e)}")
+
+@app.get("/api/topic/{topic_id}/insights", response_model=TrendingInsightsResponse)
+async def get_topic_insights(topic_id: int, time_range: str = "24h"):
+    """
+    Get quick trending insights summary for a specific topic
+    """
+    try:
+        print(f"Getting trending insights for topic ID: {topic_id}")
+        
+        # Get quick insights summary
+        insights = await trending_analysis_agent.get_trending_insights_summary(topic_id, time_range)
+        
+        if "error" in insights:
+            raise HTTPException(status_code=500, detail=insights["error"])
+        
+        return TrendingInsightsResponse(**insights)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ERROR in get_topic_insights: {type(e).__name__}: {str(e)}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Insights failed: {type(e).__name__}: {str(e)}")
 
 @app.get("/api/health")
 async def health_check():
@@ -373,7 +333,7 @@ async def health_check():
         "status": "healthy",
         "clickhouse_connected": client is not None,
         "clickhouse_status": clickhouse_status,
-        "openai_configured": openai_client is not None
+        "openai_configured": openai_client.is_available()
     }
 
 if __name__ == "__main__":

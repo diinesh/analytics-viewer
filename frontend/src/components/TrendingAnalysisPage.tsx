@@ -6,6 +6,7 @@ interface TrendingAnalysisPageProps {
   topicId: number;
   topicName: string;
   onBack: () => void;
+  onGenerateCampaign?: (topicId: number, topicName: string) => void;
   timeRange?: string;
 }
 
@@ -13,6 +14,7 @@ const TrendingAnalysisPage: React.FC<TrendingAnalysisPageProps> = ({
   topicId,
   topicName,
   onBack,
+  onGenerateCampaign,
   timeRange = '24h'
 }) => {
   const [analysis, setAnalysis] = useState<ComprehensiveAnalysis | null>(null);
@@ -455,6 +457,69 @@ const TrendingAnalysisPage: React.FC<TrendingAnalysisPageProps> = ({
               </div>
             )}
           </CardContainer>
+        )}
+
+        {/* Campaign Generation CTA */}
+        {onGenerateCampaign && (
+          <div style={{
+            backgroundColor: '#fff',
+            borderRadius: '12px',
+            padding: '32px',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
+            margin: '32px 0',
+            border: '2px solid #3b82f6',
+            textAlign: 'center'
+          }}>
+            <div style={{
+              fontSize: '24px',
+              marginBottom: '16px'
+            }}>
+              🚀
+            </div>
+            <h3 style={{
+              margin: '0 0 12px 0',
+              fontSize: '20px',
+              fontWeight: '600',
+              color: '#111827'
+            }}>
+              Ready to Create a Marketing Campaign?
+            </h3>
+            <p style={{
+              margin: '0 0 24px 0',
+              color: '#6b7280',
+              fontSize: '16px',
+              lineHeight: '1.5'
+            }}>
+              Use this trending analysis to generate targeted marketing content for LinkedIn, Twitter, Instagram, and email campaigns.
+            </p>
+            <button
+              onClick={() => onGenerateCampaign(topicId, topicName)}
+              style={{
+                backgroundColor: '#3b82f6',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '12px 24px',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                boxShadow: '0 2px 4px rgba(59, 130, 246, 0.3)'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.backgroundColor = '#2563eb';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+                e.currentTarget.style.boxShadow = '0 4px 8px rgba(59, 130, 246, 0.4)';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.backgroundColor = '#3b82f6';
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 2px 4px rgba(59, 130, 246, 0.3)';
+              }}
+            >
+              Generate Marketing Campaign
+            </button>
+          </div>
         )}
       </div>
     </div>

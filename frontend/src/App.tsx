@@ -5,11 +5,12 @@ import SqlDisplay from './components/SqlDisplay';
 import TrendingPage from './components/TrendingPage';
 import TopicDetailPage from './components/TopicDetailPage';
 import TrendingAnalysisPage from './components/TrendingAnalysisPage';
+import CampaignGeneratorPage from './components/CampaignGeneratorPage';
 import { queryAPI } from './services/api';
 import { QueryResponse } from './types';
 import './App.css';
 
-type AppView = 'query' | 'trending' | 'topic-detail' | 'topic-analysis';
+type AppView = 'query' | 'trending' | 'topic-detail' | 'topic-analysis' | 'campaign-generator';
 
 interface SelectedTopic {
   id: number;
@@ -48,6 +49,11 @@ function App() {
     setCurrentView('topic-analysis');
   };
 
+  const handleGenerateCampaign = (topicId: number, topicName: string) => {
+    setSelectedTopic({ id: topicId, name: topicName });
+    setCurrentView('campaign-generator');
+  };
+
   const handleBackToTrending = () => {
     setCurrentView('trending');
     setSelectedTopic(null);
@@ -63,12 +69,23 @@ function App() {
     setSelectedTopic(null);
   };
 
+  if (currentView === 'campaign-generator' && selectedTopic) {
+    return (
+      <CampaignGeneratorPage 
+        topicId={selectedTopic.id}
+        topicName={selectedTopic.name}
+        onBack={handleBackToTrending}
+      />
+    );
+  }
+
   if (currentView === 'topic-analysis' && selectedTopic) {
     return (
       <TrendingAnalysisPage 
         topicId={selectedTopic.id}
         topicName={selectedTopic.name}
         onBack={handleBackToTopicDetail}
+        onGenerateCampaign={handleGenerateCampaign}
       />
     );
   }

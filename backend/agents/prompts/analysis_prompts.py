@@ -2,19 +2,29 @@
 Analysis prompts for trending topic insights and content analysis
 """
 
-def get_trending_analysis_prompt(topic_data: dict, web_context: dict) -> str:
+def get_trending_analysis_prompt(topic_data: dict, web_context: dict) -> tuple[str, str]:
     """
-    Generate prompt for comprehensive trending analysis
+    Generate system and user prompts for comprehensive trending analysis
     
     Args:
         topic_data: Database trending data (trend_score, category, etc.)
         web_context: Web search results and content summary
         
     Returns:
-        Formatted prompt for OpenAI analysis
+        Tuple of (system_message, user_message)
     """
     
-    return f"""You are an expert trending topics analyst. Analyze why this topic is trending and provide comprehensive insights.
+    system_message = """You are an expert trending topics analyst with deep knowledge of social media trends, news cycles, and digital content patterns. 
+
+Your role is to:
+- Analyze trending data objectively and factually
+- Identify the core reasons behind trending patterns
+- Predict trend trajectories based on historical patterns
+- Provide actionable insights for content strategists and marketers
+
+Always respond in valid JSON format. Base your analysis on the provided data and clearly indicate when information is limited or unavailable."""
+
+    user_message = f"""Analyze why this topic is trending and provide comprehensive insights.
 
 TOPIC TRENDING DATA:
 - Topic Name: {topic_data.get('topic_name', 'Unknown')}
@@ -33,8 +43,7 @@ Search Query Used: {web_context.get('search_query', 'N/A')}
 Content Summary: {web_context.get('content_summary', 'No web context available')}
 Key Themes: {web_context.get('key_themes', [])}
 
-ANALYSIS REQUIREMENTS:
-Provide a JSON response with the following structure:
+Provide your analysis in this exact JSON structure:
 
 {{
     "trending_reason": {{
@@ -64,17 +73,28 @@ Provide a JSON response with the following structure:
         "peak_prediction": "If/when it will peak",
         "related_trends": "Other topics likely to trend as a result"
     }}
-}}
+}}"""
 
-Focus on factual analysis based on the data provided. If web context is limited, clearly indicate this in your analysis."""
+    return system_message, user_message
 
 
-def get_popularity_distribution_prompt(distribution_data: dict) -> str:
+def get_popularity_distribution_prompt(distribution_data: dict) -> tuple[str, str]:
     """
-    Generate prompt for analyzing popularity distribution across categories/businesses
+    Generate system and user prompts for analyzing popularity distribution across categories/businesses
     """
     
-    return f"""Analyze the popularity distribution of this trending topic across different dimensions.
+    system_message = """You are a data analyst specializing in trend distribution patterns and audience segmentation.
+
+Your expertise covers:
+- Cross-category trend analysis and audience overlap
+- Geographic and demographic trend distribution
+- Business vertical impact assessment
+- Engagement pattern recognition across different segments
+- Cultural and regional factors affecting content popularity
+
+Always respond in valid JSON format. Provide data-driven insights based on the distribution metrics provided."""
+
+    user_message = f"""Analyze the popularity distribution of this trending topic across different dimensions.
 
 DISTRIBUTION DATA:
 Category Breakdown: {distribution_data.get('category_breakdown', {})}
@@ -82,7 +102,7 @@ Business Breakdown: {distribution_data.get('business_breakdown', {})}
 Geographic Distribution: {distribution_data.get('geographic_breakdown', {})}
 Stat Type Distribution: {distribution_data.get('stat_type_breakdown', {})}
 
-Provide analysis in JSON format:
+Provide your analysis in this exact JSON structure:
 
 {{
     "category_analysis": {{
@@ -107,19 +127,32 @@ Provide analysis in JSON format:
     }}
 }}"""
 
+    return system_message, user_message
 
-def get_content_summary_prompt(topic_name: str, web_content: str, category: str) -> str:
+
+def get_content_summary_prompt(topic_name: str, web_content: str, category: str) -> tuple[str, str]:
     """
-    Generate prompt for creating topic content summary
+    Generate system and user prompts for creating topic content summary
     """
     
-    return f"""Create a comprehensive content summary for this trending topic.
+    system_message = """You are a content analyst specializing in trending topics and digital content summarization.
+
+Your expertise includes:
+- Extracting key insights from web content and news articles
+- Identifying stakeholders and affected parties
+- Understanding content themes and emotional tones
+- Providing contextual background and historical perspective
+- Predicting content trajectory and future developments
+
+Always respond in valid JSON format. Be factual and objective. When information is limited or unavailable, clearly state this in your response."""
+
+    user_message = f"""Create a comprehensive content summary for this trending topic.
 
 TOPIC: {topic_name}
 CATEGORY: {category}
 WEB CONTENT: {web_content}
 
-Generate a content summary in JSON format:
+Provide your summary in this exact JSON structure:
 
 {{
     "topic_overview": {{
@@ -147,17 +180,28 @@ Generate a content summary in JSON format:
         "broader_implications": "Wider implications/consequences",
         "historical_context": "How this fits into broader context"
     }}
-}}
+}}"""
 
-Base your analysis on factual content. If information is limited, indicate this clearly."""
+    return system_message, user_message
 
 
-def get_trend_comparison_prompt(current_data: dict, historical_data: dict) -> str:
+def get_trend_comparison_prompt(current_data: dict, historical_data: dict) -> tuple[str, str]:
     """
-    Generate prompt for comparing current trends with historical patterns
+    Generate system and user prompts for comparing current trends with historical patterns
     """
     
-    return f"""Compare current trending patterns with historical data to identify insights.
+    system_message = """You are a trend forecasting specialist with expertise in historical pattern analysis and predictive modeling.
+
+Your core competencies include:
+- Comparative analysis of trending patterns across different time periods
+- Recognition of cyclical and seasonal trending behaviors
+- Velocity and momentum analysis for trend trajectories
+- Pattern matching with similar historical events
+- Predictive modeling based on historical precedents
+
+Always respond in valid JSON format. Base predictions on observable patterns in the historical data and clearly indicate confidence levels where appropriate."""
+
+    user_message = f"""Compare current trending patterns with historical data to identify insights and predictions.
 
 CURRENT TRENDING DATA:
 {current_data}
@@ -165,7 +209,7 @@ CURRENT TRENDING DATA:
 HISTORICAL COMPARISON DATA:
 {historical_data}
 
-Provide comparison analysis in JSON format:
+Provide your comparative analysis in this exact JSON structure:
 
 {{
     "trend_velocity": {{
@@ -189,3 +233,5 @@ Provide comparison analysis in JSON format:
         "intensity_forecast": "Predicted intensity changes"
     }}
 }}"""
+
+    return system_message, user_message

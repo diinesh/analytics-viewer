@@ -1,0 +1,42 @@
+steps:
+  # Build the container image using the simple dockerfile
+  - name: 'gcr.io/cloud-builders/docker'
+    args: 
+      - 'build'
+      - '-f' 
+      - 'Dockerfile.simple'
+      - '-t' 
+      - 'gcr.io/$PROJECT_ID/analytics-frontend-simple:$BUILD_ID'
+      - '--build-arg'
+      - 'REACT_APP_API_URL=${_BACKEND_URL}'
+      - '.'
+  
+  # Push the container image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/analytics-frontend-simple:$BUILD_ID']
+  
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'analytics-frontend-simple'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/analytics-frontend-simple:$BUILD_ID'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--port'
+      - '3000'
+      - '--memory'
+      - '1Gi'
+      - '--cpu'
+      - '1'
+      - '--max-instances'
+      - '10'
+
+images:
+  - 'gcr.io/$PROJECT_ID/analytics-frontend-simple:$BUILD_ID'

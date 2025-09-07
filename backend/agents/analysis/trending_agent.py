@@ -140,8 +140,8 @@ class TrendingAnalysisAgent:
             return {"error": "OpenAI not available for analysis"}
         
         try:
-            prompt = get_trending_analysis_prompt(trending_data, web_context)
-            analysis_response = await self.openai_client.generate_completion(prompt)
+            system_message, user_message = get_trending_analysis_prompt(trending_data, web_context)
+            analysis_response = await self.openai_client.generate_completion_with_system(system_message, user_message)
             
             # Try to parse as JSON, fall back to text if needed
             try:
@@ -213,8 +213,8 @@ class TrendingAnalysisAgent:
             }
         
         try:
-            prompt = get_content_summary_prompt(topic_name, web_content, category)
-            summary_response = await self.openai_client.generate_completion(prompt)
+            system_message, user_message = get_content_summary_prompt(topic_name, web_content, category)
+            summary_response = await self.openai_client.generate_completion_with_system(system_message, user_message)
             
             try:
                 summary = json.loads(summary_response)
